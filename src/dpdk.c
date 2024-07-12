@@ -19,23 +19,21 @@
 static struct rte_eth_conf ethconf = {
 #ifdef RTE_VER_YEAR
     /* version  > to 2.2.0, last one with old major.minor.patch system */
-    .link_speeds = ETH_LINK_SPEED_AUTONEG,
+    .link_speeds = RTE_ETH_LINK_SPEED_AUTONEG,
 #else
     /* compatibility with older version */
     .link_speed = 0,        // autonegociated speed link
     .link_duplex = 0,       // autonegociated link mode
 #endif
     .rxmode = {
-        .mq_mode = ETH_MQ_RX_NONE,
+        .mq_mode = RTE_ETH_MQ_RX_NONE,
     },
 
     .txmode = {
-        .mq_mode = ETH_MQ_TX_NONE,  // Multi queue packet routing mode.
+        .mq_mode =RTE_ETH_MQ_TX_NONE,  // Multi queue packet routing mode.
+	.offloads=RTE_ETH_TX_OFFLOAD_TCP_TSO
     },
 
-    .fdir_conf = {
-        .mode = RTE_FDIR_MODE_NONE, // Disable flow director support
-    },
 
     .intr_conf = {
         .lsc = 0,                   // Disable lsc interrupts
@@ -85,15 +83,6 @@ char** fill_eal_args(const struct cmd_opts* opts, const struct cpus_bindings* cp
         return (NULL);
     memcpy(eal_args, (char**)pre_eal_args, sizeof(pre_eal_args));
     cpt = sizeof(pre_eal_args) / sizeof(*pre_eal_args);
-    for (i = 0; opts->pcicards[i]; i++) {
-        eal_args = myrealloc(eal_args, sizeof(char*) * (cpt + 2));
-        if (!eal_args)
-            return (NULL);
-        eal_args[cpt - 1] = "--pci-whitelist"; /* overwrite "NULL" */
-        eal_args[cpt] = opts->pcicards[i];
-        eal_args[cpt + 1] = NULL;
-        cpt += 2;
-    }
     *eal_args_ac = cpt - 1;
     return (eal_args);
 }
@@ -164,12 +153,7 @@ int init_dpdk_eal_mempool(const struct cmd_opts* opts,
     if (!opts || !cpus || !dpdk)
         return (EINVAL);
 
-    /* API BREAKAGE ON 17.05 */
-#if API_OLDEST_THAN(17, 05)
-    rte_set_log_level(RTE_LOG_ERR);
-#else /* if DPDK >= 17.05 */
-    rte_log_set_global_level(RTE_LOG_ERR);
-#endif
+    rte_log_set_global_level(RTE_LOG_INFO);
 
     /* craft an eal arg list */
     eal_args = fill_eal_args(opts, cpus, dpdk, &eal_args_ac);
@@ -199,11 +183,7 @@ int init_dpdk_eal_mempool(const struct cmd_opts* opts,
     }
 
     /* check that dpdk detects all wanted/needed NIC ports */
-#if API_OLDEST_THAN(18, 05) /* API BREAKAGE ON 18.05 */
-    nb_ports = rte_eth_dev_count();
-#else /* if DPDK >= 18.05 */
     nb_ports = rte_eth_dev_count_avail();
-#endif
     if (nb_ports != cpus->nb_needed_cpus) {
         printf("%s error: wanted %u NIC ports, found %u\n", __FUNCTION__,
                cpus->nb_needed_cpus, nb_ports);
@@ -224,7 +204,6 @@ int init_dpdk_eal_mempool(const struct cmd_opts* opts,
     if (dpdk->pktmbuf_pool == NULL) {
         fprintf(stderr, "DPDK: RTE Mempool creation failed (%s)\n",
                 rte_strerror(rte_errno));
-#if API_AT_LEAST_AS_RECENT_AS(18, 05)
         if (rte_errno == ENOMEM
             && (dpdk->nb_mbuf * dpdk->mbuf_sz /1024/1024) > RTE_MAX_MEM_MB_PER_LIST)
             fprintf(stderr, "Your version of DPDK was configured to use at maximum"
@@ -232,7 +211,6 @@ int init_dpdk_eal_mempool(const struct cmd_opts* opts,
                     "Try to recompile DPDK by setting CONFIG_RTE_MAX_MEM_MB_PER_LIST"
                     " according to your needs.\n", RTE_MAX_MEM_MB_PER_LIST,
                     dpdk->nb_mbuf * dpdk->mbuf_sz /1024/1024);
-#endif /* API_AT_LEAST_AS_RECENT_AS(18, 05) */
         return (rte_errno);
     }
     return (0);
@@ -249,7 +227,7 @@ int init_dpdk_ports(struct cpus_bindings* cpus)
     for (i = 0; (unsigned)i < cpus->nb_needed_cpus; i++) {
         /* if the port ID isn't on the good numacore, exit */
         numa = rte_eth_dev_socket_id(i);
-        if (numa != cpus->numacore) {
+        if (numa != cpus->numacore && numa != -1) {
             fprintf(stderr, "port %i is not on the good numa id (%i).\n", i, numa);
             return (1);
         }

@@ -10,8 +10,8 @@
 #include <semaphore.h>
 
 #define MBUF_CACHE_SZ   32
-#define TX_QUEUE_SIZE   4096
-#define NB_TX_QUEUES    64 /* ^2 needed to make fast modulos % */
+#define TX_QUEUE_SIZE   1024
+#define NB_TX_QUEUES    8 /* ^2 needed to make fast modulos % */
 #define BURST_SZ        128
 #define NB_RETRY_TX     (NB_TX_QUEUES * 2)
 
